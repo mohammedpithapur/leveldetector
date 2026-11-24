@@ -1,4 +1,4 @@
-# Level Detector – Ideas
+# Level Detector - Ideas
 
 Not planned yet. Pick up later.
 
@@ -7,7 +7,7 @@ Not planned yet. Pick up later.
 2. **Smooth distance**: take 5 readings and use the median to reject ultrasonic spikes.
 3. **Temperature correction**: use the DHT11 temperature to correct the speed of sound (`331.3 + 0.606 * T` m/s) instead of a fixed 343 m/s.
 4. **Connection status**: wait for Adafruit IO with a timeout in `setup()`, and show a Wi-Fi/IO status icon on the OLED.
-5. **Move secrets out of the code**: put Wi-Fi and Adafruit IO keys in a `secrets.h` that stays out of git/backups.
+5. ~~Move secrets out of the code~~ - done: Wi-Fi and Adafruit IO details are entered through the WiFiManager setup portal.
 
 ## Nice to have
 - Alerts: buzzer or LED for low/high level, plus an Adafruit IO action that sends an email.
