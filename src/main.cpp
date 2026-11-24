@@ -6,23 +6,21 @@
 #include <DHT.h>
 #include "AdafruitIO_WiFi.h"
 #include <WiFiManager.h>
-#include <LittleFS.h>
 
 // ========== WIFI & ADAFRUIT IO ==========
-// Wi-Fi and Adafruit IO credentials are entered through the setup portal
-// and stored on the board, so nothing secret lives in the code.
+// Adafruit IO details are hard coded in secrets.h (git-ignored).
+// Wi-Fi is entered through the setup portal and saved on the board.
+
+#include "secrets.h"
 
 #define PORTAL_NAME     "LevelDetector-Setup"
-#define CONFIG_FILE     "/aio.txt"
 #define RESET_PIN       D3          // FLASH button on NodeMCU
 #define RESET_HOLD_MS   3000
 
-char aioUser[41] = "";
-char aioKey[65]  = "";
 String wifiSsid;
 String wifiPass;
 
-// Created in setup() once the credentials are known
+// Created in setup() once Wi-Fi is connected
 AdafruitIO_WiFi *io = nullptr;
 
 // ========== ADAFRUIT IO FEEDS ==========
@@ -80,7 +78,7 @@ void drawHeader() {
   display.setTextColor(SSD1306_WHITE);
 
   display.setCursor(22, 0);
-  display.print("BILLION CARBON");
+  display.print("BILLIONCARBON");
 
   display.drawLine(
     0, 11, 127, 11,
@@ -274,41 +272,6 @@ void showMessage(const char *line1, const char *line2 = "", const char *line3 = 
   display.display();
 }
 
-// ========== SAVED CONFIG ==========
-
-void loadConfig() {
-
-  File f = LittleFS.open(CONFIG_FILE, "r");
-
-  if (!f) {
-    return;
-  }
-
-  String user = f.readStringUntil('\n');
-  String key  = f.readStringUntil('\n');
-  f.close();
-
-  user.trim();
-  key.trim();
-
-  user.toCharArray(aioUser, sizeof(aioUser));
-  key.toCharArray(aioKey, sizeof(aioKey));
-}
-
-void saveConfig() {
-
-  File f = LittleFS.open(CONFIG_FILE, "w");
-
-  if (!f) {
-    Serial.println("Failed to save config");
-    return;
-  }
-
-  f.println(aioUser);
-  f.println(aioKey);
-  f.close();
-}
-
 // ========== WIFI SETUP PORTAL ==========
 
 void onPortalStart(WiFiManager *wm) {
@@ -316,7 +279,7 @@ void onPortalStart(WiFiManager *wm) {
   showMessage("Join Wi-Fi:", PORTAL_NAME, "then open 192.168.4.1");
 }
 
-// Holding the reset button at boot clears the saved Wi-Fi and Adafruit IO details
+// Holding the reset button at boot clears the saved Wi-Fi details
 bool resetRequested() {
 
   if (digitalRead(RESET_PIN) != LOW) {
@@ -343,73 +306,37 @@ void connectNetwork() {
 
   WiFiManager wm;
 
-  WiFiManagerParameter userParam(
-    "aio_user", "Adafruit IO username",
-    aioUser, sizeof(aioUser) - 1
-  );
-
-  WiFiManagerParameter keyParam(
-    "aio_key", "Adafruit IO key",
-    aioKey, sizeof(aioKey) - 1
-  );
-
-  wm.addParameter(&userParam);
-  wm.addParameter(&keyParam);
-
+  wm.setDebugOutput(true);
   wm.setAPCallback(onPortalStart);
   wm.setConfigPortalTimeout(300);
   wm.setConnectTimeout(20);
 
   if (resetRequested()) {
-
     wm.resetSettings();
-    LittleFS.remove(CONFIG_FILE);
-
-    aioUser[0] = '\0';
-    aioKey[0]  = '\0';
   }
 
   showMessage("Connecting Wi-Fi...");
 
-  bool connected;
+  if (!wm.autoConnect(PORTAL_NAME)) {
 
-  if (aioUser[0] == '\0' || aioKey[0] == '\0') {
-    connected = wm.startConfigPortal(PORTAL_NAME);
-  } else {
-    connected = wm.autoConnect(PORTAL_NAME);
-  }
-
-  if (!connected) {
+    Serial.println("Wi-Fi setup failed, restarting");
 
     showMessage("Wi-Fi setup failed", "Restarting...");
     delay(3000);
     ESP.restart();
   }
 
-  // Keep the Adafruit IO details if they were entered or changed in the portal
-  String user = userParam.getValue();
-  String key  = keyParam.getValue();
-
-  user.trim();
-  key.trim();
-
-  if (user != aioUser || key != aioKey) {
-
-    user.toCharArray(aioUser, sizeof(aioUser));
-    key.toCharArray(aioKey, sizeof(aioKey));
-
-    saveConfig();
-  }
-
-  if (aioUser[0] == '\0' || aioKey[0] == '\0') {
-
-    showMessage("Adafruit IO details", "missing, restarting");
-    delay(3000);
-    ESP.restart();
-  }
-
   wifiSsid = WiFi.SSID();
   wifiPass = WiFi.psk();
+
+  Serial.print("Wi-Fi connected to: ");
+  Serial.println(wifiSsid);
+
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  showMessage("Wi-Fi connected", wifiSsid.c_str(), WiFi.localIP().toString().c_str());
+  delay(1500);
 }
 
 // ========== UPLOAD DATA ==========
@@ -449,9 +376,6 @@ void setup() {
   pinMode(ECHO_PIN, INPUT);
   pinMode(RESET_PIN, INPUT_PULLUP);
 
-  LittleFS.begin();
-  loadConfig();
-
   digitalWrite(TRIG_PIN, LOW);
 
   Wire.begin(OLED_SDA, OLED_SCL);
@@ -483,8 +407,8 @@ void setup() {
 
   // Connect to Adafruit IO
   io = new AdafruitIO_WiFi(
-    aioUser,
-    aioKey,
+    IO_USERNAME,
+    IO_KEY,
     wifiSsid.c_str(),
     wifiPass.c_str()
   );
@@ -504,7 +428,13 @@ void setup() {
     delay(500);
   }
 
+  Serial.print("Adafruit IO status: ");
   Serial.println(io->statusText());
+
+  if (io->status() < AIO_CONNECTED) {
+    showMessage("Adafruit IO failed", "check key/username");
+    delay(2000);
+  }
 
   // Initial sensor reading
   readSensors();
